@@ -146,7 +146,7 @@ class SupervisedDataset(Dataset):
         prompt_input, prompt_no_input = PROMPT_DICT["prompt_input"], PROMPT_DICT["prompt_no_input"]
         sources = [
             prompt_input.format_map(example) if example.get("input", "") != "" else prompt_no_input.format_map(example)
-            for example in list_data_dict
+            for example in list_data_dict if 'instruction' in example
         ]
         targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
 
