@@ -40,6 +40,11 @@ PROMPT_DICT = {
         "Write a response that appropriately completes the request.\n\n"
         "### Instruction:\n{instruction}\n\n### Response:"
     ),
+    "prompt_law_instruct": (
+        "Below is an instruction that describes a task. "
+        "Write a response that appropriately completes the request.\n\n"
+        "### Instruction:\n{instruction}"
+    )
 }
 
 
@@ -73,9 +78,9 @@ def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: st
 
 
 def smart_tokenizer_and_embedding_resize(
-    special_tokens_dict: Dict,
-    tokenizer: transformers.PreTrainedTokenizer,
-    model: transformers.PreTrainedModel,
+        special_tokens_dict: Dict,
+        tokenizer: transformers.PreTrainedTokenizer,
+        model: transformers.PreTrainedModel,
 ):
     """Resize tokenizer and embedding.
 
@@ -120,9 +125,9 @@ def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedToken
 
 
 def preprocess(
-    sources: Sequence[str],
-    targets: Sequence[str],
-    tokenizer: transformers.PreTrainedTokenizer,
+        sources: Sequence[str],
+        targets: Sequence[str],
+        tokenizer: transformers.PreTrainedTokenizer,
 ) -> Dict:
     """Preprocess the data by tokenizing."""
     examples = [s + t for s, t in zip(sources, targets)]
@@ -143,9 +148,13 @@ class SupervisedDataset(Dataset):
         list_data_dict = utils.jload(data_path)
 
         logging.warning("Formatting inputs...")
-        prompt_input, prompt_no_input = PROMPT_DICT["prompt_input"], PROMPT_DICT["prompt_no_input"]
+
         sources = [
-            prompt_input.format_map(example) if example.get("input", "") != "" else prompt_no_input.format_map(example)
+            PROMPT_DICT["prompt_law_instruct"].format_map(example)
+            if example.get("input", "") == "" and example.get("output", "") == "" else
+            PROMPT_DICT["prompt_input"].format_map(example)
+            if example.get("input", "") != "" else
+            PROMPT_DICT["prompt_no_input"].format_map(example)
             for example in list_data_dict if 'instruction' in example
         ]
         targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
@@ -189,6 +198,37 @@ def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, dat
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
 
 
+def setup_8bit_adam(model, training_args):
+    import bitsandbytes as bnb
+    from torch import nn
+    from transformers.trainer_pt_utils import get_parameter_names
+
+    decay_parameters = get_parameter_names(model, [nn.LayerNorm])
+    decay_parameters = [name for name in decay_parameters if "bias" not in name]
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if n in decay_parameters],
+            "weight_decay": training_args.weight_decay,
+        },
+        {
+            "params": [p for n, p in model.named_parameters() if n not in decay_parameters],
+            "weight_decay": 0.0,
+        },
+    ]
+    optimizer_kwargs = {
+        "betas": (training_args.adam_beta1, training_args.adam_beta2),
+        "eps": training_args.adam_epsilon,
+    }
+    optimizer_kwargs["lr"] = training_args.learning_rate
+    adam_bnb_optim = bnb.optim.Adam8bit(
+        optimizer_grouped_parameters,
+        betas=(training_args.adam_beta1, training_args.adam_beta2),
+        eps=training_args.adam_epsilon,
+        lr=training_args.learning_rate,
+    )
+    return adam_bnb_optim
+
+
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
@@ -221,6 +261,8 @@ def train():
         )
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
+
+    # optimizers = (setup_8bit_adam(model, training_args), None) # this is not allowed when FDSP is enabled
     trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
     trainer.train()
     trainer.save_state()
