@@ -2,7 +2,7 @@ PORT=$((1024 + RANDOM % 49152))
 OUTPUT_DIR=output
 
 TOTAL_BATCH_SIZE=128
-NUM_GPUS=2
+NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l) # get number of available GPUs
 BATCH_SIZE=4
 ACC_STEPS=$((TOTAL_BATCH_SIZE / (NUM_GPUS * BATCH_SIZE)))
 MAX_SEQ_LEN=512
@@ -13,11 +13,12 @@ MAX_SEQ_LEN=512
 # 2048: 2
 
 DATA_PATH=./alpaca_data_cleaned.json
+DATA_PATH=./law_instruction_data_len:512_samples:1000.json
 
 MODEL_PATH=facebook/opt-6.7b
 #MODEL_PATH=/home/groups/deho/jniklaus/LegalLM/llama-7b
-MODEL_PATH=/home/groups/deho/jniklaus/LegalLM/llama_7B/llama-7b
 MODEL_PATH=cerebras/Cerebras-GPT-6.7B
+MODEL_PATH=/home/groups/deho/jniklaus/LegalLM/llama_7B/llama-7b
 
 if [[ $MODEL_PATH == *"opt"* ]]; then
     TRANSFORMER_LAYER="OPTDecoderLayer"
