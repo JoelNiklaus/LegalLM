@@ -142,7 +142,11 @@ class SupervisedDataset(Dataset):
     def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer):
         super(SupervisedDataset, self).__init__()
         logging.warning("Loading data...")
-        list_data_dict = utils.jload(data_path)
+        if "max_seq_len:" in data_path and "samples:" in data_path:
+            max_seq_len, num_samples = [int(x.split(":")[1]) for x in data_path.split("_")]
+            list_data_dict = generate_lawinstruct(max_seq_len=max_seq_len, num_samples=num_samples)
+        else:  # it is a real data path
+            list_data_dict = utils.jload(data_path)
 
         logging.warning("Formatting inputs...")
 
@@ -155,7 +159,7 @@ class SupervisedDataset(Dataset):
         targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
 
         logging.warning("Tokenizing inputs... This may take some time...")
-        data_dict = preprocess(sources, targets, tokenizer, supervised="law_instruct" not in data_path)
+        data_dict = preprocess(sources, targets, tokenizer, supervised=True)
 
         self.input_ids = data_dict["input_ids"]
         self.labels = data_dict["labels"]
