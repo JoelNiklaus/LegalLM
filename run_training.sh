@@ -7,10 +7,17 @@ BATCH_SIZE=4
 ACC_STEPS=$((TOTAL_BATCH_SIZE / (NUM_GPUS * BATCH_SIZE)))
 MAX_SEQ_LEN=512
 
-# Maximum Sequence Lengths and batch sizes:
-# 512: 4
-# 1024: 3
-# 2048: 2
+# Set BATCH_SIZE based on the given MAX_SEQ_LEN
+if [ "$MAX_SEQ_LEN" -eq 512 ]; then
+  BATCH_SIZE=4
+elif [ "$MAX_SEQ_LEN" -eq 1024 ]; then
+  BATCH_SIZE=3
+elif [ "$MAX_SEQ_LEN" -eq 2048 ]; then
+  BATCH_SIZE=2
+else
+  echo "Invalid MAX_SEQ_LEN value"
+  exit 1
+fi
 
 DATA_PATH=./alpaca_data_cleaned.json
 DATA_PATH=./law_instruction_data_len:512_samples:1000.json
