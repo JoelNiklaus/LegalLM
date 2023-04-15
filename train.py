@@ -142,7 +142,7 @@ class SupervisedDataset(Dataset):
     def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer):
         super(SupervisedDataset, self).__init__()
         logging.warning("Loading data...")
-        if "max_seq_len:" in data_path and "samples:" in data_path:
+        if "max-seq-len:" in data_path and "samples:" in data_path:
             max_seq_len, num_samples = [int(x.split(":")[1]) for x in data_path.split("_")]
             list_data_dict = generate_lawinstruct(max_seq_len=max_seq_len, num_samples=num_samples)
         else:  # it is a real data path

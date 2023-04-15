@@ -21,7 +21,7 @@ fi
 
 DATA_PATH=./alpaca_data_cleaned.json
 DATA_PATH=./law_instruction_data_len:512_samples:1000.json
-DATA_PATH=max_seq_len:512_samples:10
+DATA_PATH=max-seq-len:512_samples:10
 
 MODEL_PATH=facebook/opt-6.7b
 MODEL_PATH=/home/groups/deho/jniklaus/LegalLM/llama-7b

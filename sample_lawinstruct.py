@@ -7,7 +7,8 @@ from datasets import load_dataset
 def generate_instruction_data(dataset_name,
                               configs,
                               max_seq_len=512,
-                              num_samples=500):
+                              num_samples=500,
+                              use_fast_way=True):
     def should_be_sampled(example, max_num_whitespace_tokens):
         example = {k: ("" if v is None else v) for k, v in example.items()}
         text = example["instruction"] + " " + example["prompt"] + " " + example["answer"]
@@ -46,7 +47,7 @@ def generate_instruction_data(dataset_name,
                     num_samples_taken += 1
                 if num_samples_taken >= num_samples:
                     break
-        else:
+        else:  # this is a cleaner way which probably takes longer
             # this slows it down considerably for large datasets,
             # but could be more easily parallelized when using non-streaming datasets
             dataset = dataset.filter(lambda example: should_be_sampled(example, max_num_whitespace_tokens))
@@ -60,7 +61,6 @@ def generate_instruction_data(dataset_name,
 
 
 def generate_lawinstruct(max_seq_len=512, num_samples=10000):
-    use_fast_way = True  # there is a cleaner way which probably takes longer
     dataset_name = "lawinstruct/lawinstruct"
     configs = get_dataset_config_names(dataset_name)
     print(configs)
