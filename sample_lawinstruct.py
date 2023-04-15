@@ -60,9 +60,11 @@ def generate_instruction_data(dataset_name,
     return instruction_data
 
 
-def generate_lawinstruct(max_seq_len=512, num_samples=10000):
+def generate_lawinstruct(max_seq_len=512, num_samples=10000, debug=False):
     dataset_name = "lawinstruct/lawinstruct"
     configs = get_dataset_config_names(dataset_name)
+    if debug:
+        configs = configs[:2]
     print(configs)
 
     non_legal_configs = ['NaturalInstructionsOther', 'XP3MT']

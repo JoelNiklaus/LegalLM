@@ -24,6 +24,8 @@ from transformers import Trainer
 
 import utils
 
+from sample_lawinstruct import generate_lawinstruct
+
 IGNORE_INDEX = -100
 DEFAULT_PAD_TOKEN = "[PAD]"
 DEFAULT_EOS_TOKEN = "</s>"
