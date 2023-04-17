@@ -26,6 +26,7 @@ DATA_PATH=max-seq-len:${MAX_SEQ_LEN}_samples:${SAMPLES_PER_DATASET} # generate t
 MODEL_PATH=facebook/opt-6.7b
 MODEL_PATH=/home/groups/deho/jniklaus/LegalLM/llama-7b
 MODEL_PATH=cerebras/Cerebras-GPT-6.7B
+MODEL_PATH=cerebras/Cerebras-GPT-111M # for debugging
 
 OUTPUT_DIR=output-${MODEL_PATH##*/}-max-seq-len:${MAX_SEQ_LEN}_samples:${SAMPLES_PER_DATASET}
 
