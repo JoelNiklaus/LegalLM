@@ -1,12 +1,6 @@
 PORT=$((1024 + RANDOM % 49152))
 
-TOTAL_BATCH_SIZE=128
-NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l) # get number of available GPUs
-BATCH_SIZE=4
-ACC_STEPS=$((TOTAL_BATCH_SIZE / (NUM_GPUS * BATCH_SIZE)))
 MAX_SEQ_LEN=512
-SAMPLES_PER_DATASET=10
-
 # Set BATCH_SIZE based on the given MAX_SEQ_LEN
 if [ "$MAX_SEQ_LEN" -eq 512 ]; then
   BATCH_SIZE=4
@@ -19,14 +13,22 @@ else
   exit 1
 fi
 
-DATA_PATH=./alpaca_data_cleaned.json
+TOTAL_BATCH_SIZE=128
+NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l) # get number of available GPUs
+ACC_STEPS=$((TOTAL_BATCH_SIZE / (NUM_GPUS * BATCH_SIZE)))
+
+
+SAMPLES_PER_DATASET=10000
+
 DATA_PATH=./law_instruction_data_len:512_samples:1000.json # use a fixed dataset
+DATA_PATH=./alpaca_data_cleaned.json
+DATA_PATH=./alpaca_data.json
 DATA_PATH=max-seq-len:${MAX_SEQ_LEN}_samples:${SAMPLES_PER_DATASET} # generate the dataset on the fly
 
 MODEL_PATH=facebook/opt-6.7b
-MODEL_PATH=/home/groups/deho/jniklaus/LegalLM/llama-7b
-MODEL_PATH=cerebras/Cerebras-GPT-6.7B
+MODEL_PATH=/home/groups/deho/jniklaus/LegalLM/llama_7B/llama-7b
 MODEL_PATH=cerebras/Cerebras-GPT-111M # for debugging
+MODEL_PATH=cerebras/Cerebras-GPT-6.7B
 
 OUTPUT_DIR=output-${MODEL_PATH##*/}-max-seq-len:${MAX_SEQ_LEN}_samples:${SAMPLES_PER_DATASET}
 

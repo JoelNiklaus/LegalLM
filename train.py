@@ -104,8 +104,6 @@ def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedToken
             text,
             return_tensors="pt",
             padding="longest",
-            max_length=tokenizer.model_max_length,
-            truncation=True,
         )
         for text in strings
     ]
@@ -135,6 +133,17 @@ def preprocess(
     if supervised:
         for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
             label[:source_len] = IGNORE_INDEX  # ignore source, all tokens are set to -100
+
+    # Filtering out examples that are too long
+    # to make sure that we don't train on examples where we have no or partial targets
+    for i in range(len(input_ids)):
+        # filter if longer than tokenizer.model_max_length
+        if len(input_ids[i]) > tokenizer.model_max_length:
+            input_ids[i] = None
+            labels[i] = None
+    input_ids = [x for x in input_ids if x is not None]
+    labels = [x for x in labels if x is not None]
+
     return dict(input_ids=input_ids, labels=labels)
 
 
@@ -146,7 +155,7 @@ class SupervisedDataset(Dataset):
         logging.warning("Loading data...")
         if "max-seq-len:" in data_path and "samples:" in data_path:
             max_seq_len, num_samples = [int(x.split(":")[1]) for x in data_path.split("_")]
-            list_data_dict = generate_lawinstruct(max_seq_len=max_seq_len, num_samples=num_samples)
+            list_data_dict = generate_lawinstruct(max_seq_len=max_seq_len, num_samples=num_samples, debug=False)
         else:  # it is a real data path
             list_data_dict = utils.jload(data_path)
 
