@@ -1,3 +1,4 @@
+import random
 import json
 
 from datasets import get_dataset_config_names
@@ -8,7 +9,8 @@ def generate_instruction_data(dataset_name,
                               configs,
                               max_seq_len=512,
                               num_samples=500,
-                              use_fast_way=True):
+                              use_fast_way=True,
+                              do_shuffle=True):
     def should_be_sampled(example, max_num_whitespace_tokens):
         example = {k: ("" if v is None else v) for k, v in example.items()}
         text = example["instruction"] + " " + example["prompt"] + " " + example["answer"]
@@ -54,6 +56,11 @@ def generate_instruction_data(dataset_name,
             dataset = dataset.shuffle(seed=42)
             examples_to_add = [get_example_dict(example) for example in dataset.take(num_samples)]
             instruction_data.extend(examples_to_add)
+
+    if do_shuffle:
+        print(f"Shuffling {len(instruction_data)} examples...")
+        random.shuffle(instruction_data)
+
     print(f"Writing {len(instruction_data)} examples to {filename}...")
     with open(filename, "w") as file:
         json.dump(instruction_data, file, indent=4)
@@ -64,7 +71,7 @@ def generate_lawinstruct(max_seq_len=512, num_samples=10000, debug=False):
     dataset_name = "lawinstruct/lawinstruct"
     configs = get_dataset_config_names(dataset_name)
     if debug:
-        configs = configs[:2]
+        configs = configs[:1]
     print(configs)
 
     non_legal_configs = ['NaturalInstructionsOther', 'XP3MT']
