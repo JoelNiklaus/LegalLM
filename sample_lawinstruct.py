@@ -4,7 +4,7 @@ import json
 from datasets import get_dataset_config_names
 from datasets import load_dataset
 
-
+import pandas as pd
 def generate_instruction_data(dataset_name,
                               configs,
                               max_seq_len=512,
@@ -25,6 +25,7 @@ def generate_instruction_data(dataset_name,
 
     instruction_data = []
     filename = f"law_instruction_data_len:{max_seq_len}_samples:{num_samples}.json"
+    stats = {"config": [], "num_examples": []}
     for config in configs:
         print(f"Loading {dataset_name}:{config}...")
         dataset = load_dataset(dataset_name,
@@ -56,10 +57,19 @@ def generate_instruction_data(dataset_name,
             dataset = dataset.shuffle(seed=42)
             examples_to_add = [get_example_dict(example) for example in dataset.take(num_samples)]
             instruction_data.extend(examples_to_add)
+            num_samples_taken = len(examples_to_add)
+
+        stats["config"].append(config)
+        stats["num_examples"].append(num_samples_taken)
 
     if do_shuffle:
         print(f"Shuffling {len(instruction_data)} examples...")
         random.shuffle(instruction_data)
+
+    # convert stats to pandas dataframe and save to csv
+
+    stats_df = pd.DataFrame(stats)
+    stats_df.to_csv(f"stats_{filename}.csv", index=False)
 
     print(f"Writing {len(instruction_data)} examples to {filename}...")
     with open(filename, "w") as file:

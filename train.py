@@ -12,37 +12,24 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import copy
-import logging
-from dataclasses import dataclass, field
-from typing import Optional, Dict, Sequence
 
-import torch
+from dataclasses import dataclass, field
+from typing import Optional, Dict
+
 import transformers
-from torch.utils.data import Dataset
 from transformers import Trainer
 
-import utils
+from peft import LoraConfig, get_peft_model
+import torch
+import torch.nn as nn
+import bitsandbytes as bnb
 
-from sample_lawinstruct import generate_lawinstruct
+from prepare_data import make_supervised_data_module
 
-IGNORE_INDEX = -100
 DEFAULT_PAD_TOKEN = "[PAD]"
 DEFAULT_EOS_TOKEN = "</s>"
 DEFAULT_BOS_TOKEN = "</s>"
 DEFAULT_UNK_TOKEN = "</s>"
-PROMPT_DICT = {
-    "prompt_input": (
-        "Below is an instruction that describes a task, paired with an input that provides further context. "
-        "Write a response that appropriately completes the request.\n\n"
-        "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:"
-    ),
-    "prompt_no_input": (
-        "Below is an instruction that describes a task. "
-        "Write a response that appropriately completes the request.\n\n"
-        "### Instruction:\n{instruction}\n\n### Response:"
-    ),
-}
 
 
 @dataclass
@@ -57,6 +44,7 @@ class DataArguments:
 
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
+    train_with_peft: bool = field(default=False)
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(
@@ -97,117 +85,6 @@ def smart_tokenizer_and_embedding_resize(
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
 
 
-def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
-    """Tokenize a list of strings."""
-    tokenized_list = [
-        tokenizer(
-            text,
-            return_tensors="pt",
-            padding="longest",
-        )
-        for text in strings
-    ]
-    input_ids = labels = [tokenized.input_ids[0] for tokenized in tokenized_list]
-    input_ids_lens = labels_lens = [
-        tokenized.input_ids.ne(tokenizer.pad_token_id).sum().item() for tokenized in tokenized_list
-    ]
-    return dict(
-        input_ids=input_ids,
-        labels=labels,
-        input_ids_lens=input_ids_lens,
-        labels_lens=labels_lens,
-    )
-
-
-def preprocess(
-        sources: Sequence[str],
-        targets: Sequence[str],
-        tokenizer: transformers.PreTrainedTokenizer,
-        supervised: bool = True,
-) -> Dict:
-    """Preprocess the data by tokenizing."""
-    examples = [s + t for s, t in zip(sources, targets)]
-    examples_tokenized, sources_tokenized = [_tokenize_fn(strings, tokenizer) for strings in (examples, sources)]
-    input_ids = examples_tokenized["input_ids"]
-    labels = copy.deepcopy(input_ids)
-    if supervised:
-        for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
-            label[:source_len] = IGNORE_INDEX  # ignore source, all tokens are set to -100
-
-    # Filtering out examples that are too long
-    # to make sure that we don't train on examples where we have no or partial targets
-    for i in range(len(input_ids)):
-        # filter if longer than tokenizer.model_max_length
-        if len(input_ids[i]) > tokenizer.model_max_length:
-            input_ids[i] = None
-            labels[i] = None
-    input_ids = [x for x in input_ids if x is not None]
-    labels = [x for x in labels if x is not None]
-
-    return dict(input_ids=input_ids, labels=labels)
-
-
-class SupervisedDataset(Dataset):
-    """Dataset for supervised fine-tuning."""
-
-    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer):
-        super(SupervisedDataset, self).__init__()
-        logging.warning("Loading data...")
-        if "max-seq-len:" in data_path and "samples:" in data_path:
-            max_seq_len, num_samples = [int(x.split(":")[1]) for x in data_path.split("_")]
-            list_data_dict = generate_lawinstruct(max_seq_len=max_seq_len, num_samples=num_samples, debug=False)
-        else:  # it is a real data path
-            list_data_dict = utils.jload(data_path)
-
-        logging.warning("Formatting inputs...")
-
-        sources = [
-            PROMPT_DICT["prompt_input"].format_map(example)
-            if example.get("input", "") != "" else
-            PROMPT_DICT["prompt_no_input"].format_map(example)
-            for example in list_data_dict if 'instruction' in example
-        ]
-        targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
-
-        logging.warning("Tokenizing inputs... This may take some time...")
-        data_dict = preprocess(sources, targets, tokenizer, supervised=True)
-
-        self.input_ids = data_dict["input_ids"]
-        self.labels = data_dict["labels"]
-
-    def __len__(self):
-        return len(self.input_ids)
-
-    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
-        return dict(input_ids=self.input_ids[i], labels=self.labels[i])
-
-
-@dataclass
-class DataCollatorForSupervisedDataset(object):
-    """Collate examples for supervised fine-tuning."""
-
-    tokenizer: transformers.PreTrainedTokenizer
-
-    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
-        input_ids, labels = tuple([instance[key] for instance in instances] for key in ("input_ids", "labels"))
-        input_ids = torch.nn.utils.rnn.pad_sequence(
-            input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
-        )
-        labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
-        return dict(
-            input_ids=input_ids,
-            labels=labels,
-            attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
-        )
-
-
-def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
-    """Make dataset and collator for supervised fine-tuning."""
-    train_dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path)
-    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
-    return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
-
-
 def train():
     parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
@@ -215,16 +92,22 @@ def train():
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
+        load_in_8bit=True if training_args.train_with_peft else False,
+        device_map='auto',
     )
+    print(model.config)
+    print(model)
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         model_max_length=training_args.model_max_length,
         padding_side="right",
-        use_fast=False,
+        use_fast=False if "llama" in model_args.model_name_or_path.lower() else True,
+        # use_fast=True if "stablelm" in model_args.model_name_or_path.lower() else False,
     )
     if tokenizer.pad_token is None:
+        print(f"Adding {DEFAULT_PAD_TOKEN} to the tokenizer.")
         smart_tokenizer_and_embedding_resize(
             special_tokens_dict=dict(pad_token=DEFAULT_PAD_TOKEN),
             tokenizer=tokenizer,
@@ -238,6 +121,48 @@ def train():
                 "unk_token": DEFAULT_UNK_TOKEN,
             }
         )
+
+    if training_args.train_with_peft:
+        for param in model.parameters():
+            param.requires_grad = False  # freeze the model - train adapters later
+            if param.ndim == 1:
+                # cast the small parameters (e.g. layernorm) to fp32 for stability
+                param.data = param.data.to(torch.float32)
+
+        model.gradient_checkpointing_enable()  # reduce number of stored activations ==> greatly reduces memory usage
+        model.enable_input_require_grads()
+
+        class CastOutputToFloat(nn.Sequential):
+            def forward(self, x): return super().forward(x).to(torch.float32)
+
+        if isinstance(model.config, transformers.GPTNeoXConfig):
+            model.embed_out = CastOutputToFloat(model.embed_out)
+            target_modules = ["query_key_value", "dense"]
+        elif isinstance(model.config, transformers.OPTConfig):
+            model.lm_head = CastOutputToFloat(model.lm_head)
+            target_modules = ["q_proj", "v_proj"]
+        elif isinstance(model.config, transformers.GPT2Config):
+            model.lm_head = CastOutputToFloat(model.lm_head)
+            target_modules = ["c_attn", "c_proj"]
+        elif isinstance(model.config, transformers.LlamaConfig):
+            # TODO figure this out
+            pass
+        else:
+            raise ValueError(f"Unknown model: {model_args.model_name_or_path}")
+
+        config = LoraConfig(
+            r=16,
+            lora_alpha=32,
+            target_modules=target_modules,
+            lora_dropout=0.05,
+            bias="none",
+            task_type="CAUSAL_LM"
+        )
+
+        model = get_peft_model(model, config)
+        model.print_trainable_parameters()
+
+        model.config.use_cache = False  # silence the warnings. Please re-enable for inference!
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
 
