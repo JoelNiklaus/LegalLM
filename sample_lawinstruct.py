@@ -5,6 +5,8 @@ from datasets import get_dataset_config_names
 from datasets import load_dataset
 
 import pandas as pd
+
+
 def generate_instruction_data(dataset_name,
                               configs,
                               max_seq_len=512,
@@ -67,7 +69,6 @@ def generate_instruction_data(dataset_name,
         random.shuffle(instruction_data)
 
     # convert stats to pandas dataframe and save to csv
-
     stats_df = pd.DataFrame(stats)
     stats_df.to_csv(f"stats_{filename}.csv", index=False)
 

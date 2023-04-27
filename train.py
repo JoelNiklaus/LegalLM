@@ -168,8 +168,16 @@ def train():
 
     trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
     trainer.train()
-    trainer.save_state()
-    safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+
+    hf_name = f"lawinstruct/LegalLM-{model_args.model_name_or_path.split('/')[1]}"
+    if training_args.train_with_peft:
+        model.save_pretrained(training_args.output_dir)
+        hf_name += "-lora"
+    else:
+        trainer.save_state()
+        safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
+
+    model.push_to_hub(hf_name, use_auth_token=True)
 
 
 if __name__ == "__main__":

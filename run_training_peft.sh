@@ -1,17 +1,20 @@
 PORT=$((1024 + RANDOM % 49152))
+export WANDB_PROJECT=LegalLM
+conda activate legallm
+huggingface-cli login --token $HUGGINGFACE_TOKEN
 
 TRAIN_WITH_PEFT=True
 LEARNING_RATE=2e-4
 
 MAX_SEQ_LEN=512
 
-# Set BATCH_SIZE based on the given MAX_SEQ_LEN (tested on 2 80GB A100 GPUs)
+# Set BATCH_SIZE based on the given MAX_SEQ_LEN (tested on 1 80GB A100 GPUs for a 12B model)
 if [ "$MAX_SEQ_LEN" -eq 512 ]; then
   BATCH_SIZE=32
 elif [ "$MAX_SEQ_LEN" -eq 1024 ]; then
   BATCH_SIZE=16
 elif [ "$MAX_SEQ_LEN" -eq 2048 ]; then
-  BATCH_SIZE=8 # 1 A100 GPU for a 12B model
+  BATCH_SIZE=8
 else
   echo "Invalid MAX_SEQ_LEN value"
   exit 1
@@ -92,7 +95,7 @@ python3 train.py \
     --train_with_peft ${TRAIN_WITH_PEFT} \
     --evaluation_strategy "no" \
     --save_strategy "steps" \
-    --save_steps 1000 \
+    --save_steps 100 \
     --save_total_limit 3 \
     --weight_decay 0. \
     --warmup_ratio 0.03 \
