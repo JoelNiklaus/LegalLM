@@ -12,3 +12,4 @@ peft
 loralib
 accelerate
 bitsandbytes
+safetensors
