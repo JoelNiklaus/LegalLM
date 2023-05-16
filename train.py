@@ -45,6 +45,7 @@ class DataArguments:
 @dataclass
 class TrainingArguments(transformers.TrainingArguments):
     train_with_peft: bool = field(default=False)
+    gradient_checkpointing: bool = field(default=False)
     cache_dir: Optional[str] = field(default=None)
     optim: str = field(default="adamw_torch")
     model_max_length: int = field(
@@ -129,7 +130,8 @@ def train():
                 # cast the small parameters (e.g. layernorm) to fp32 for stability
                 param.data = param.data.to(torch.float32)
 
-        model.gradient_checkpointing_enable()  # reduce number of stored activations ==> greatly reduces memory usage
+        if training_args.gradient_checkpointing:
+            model.gradient_checkpointing_enable()  # reduce number of stored activations ==> greatly reduces memory usage
         model.enable_input_require_grads()
 
         class CastOutputToFloat(nn.Sequential):
@@ -177,7 +179,7 @@ def train():
         trainer.save_state()
         safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
 
-    model.push_to_hub(hf_name, use_auth_token=True)
+    model.push_to_hub(hf_name, use_auth_token=True, private=True)
 
 
 if __name__ == "__main__":
