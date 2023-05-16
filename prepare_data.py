@@ -80,23 +80,31 @@ def preprocess(
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer):
+    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer, use_template=False):
         super(SupervisedDataset, self).__init__()
-        logging.warning("Loading data...")
         if "max-seq-len:" in data_path and "samples:" in data_path:
             max_seq_len, num_samples = [int(x.split(":")[1]) for x in data_path.split("_")]
+            logging.warning(f"Generating data with max_seq_len={max_seq_len} and num_samples={num_samples} ...")
             list_data_dict = generate_lawinstruct(max_seq_len=max_seq_len, num_samples=num_samples, debug=False)
         else:  # it is a real data path
+            logging.warning(f"Loading data from {data_path} ...")
             list_data_dict = utils.jload(data_path)
 
         logging.warning("Formatting inputs...")
 
-        sources = [
-            PROMPT_DICT["prompt_input"].format_map(example)
-            if example.get("input", "") != "" else
-            PROMPT_DICT["prompt_no_input"].format_map(example)
-            for example in list_data_dict if 'instruction' in example
-        ]
+        if use_template:
+            sources = [
+                PROMPT_DICT["prompt_input"].format_map(example)
+                if example.get("input", "") != "" else
+                PROMPT_DICT["prompt_no_input"].format_map(example)
+                for example in list_data_dict if 'instruction' in example
+            ]
+        else:
+            sources = [f"{example['instruction']}\n{example['input']}"
+                       if example.get("input", "") != "" else
+                       f"{example['instruction']}"
+                       for example in list_data_dict
+                       if 'instruction' in example and example.get("instruction", "") != ""]
         targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
 
         logging.warning("Tokenizing inputs... This may take some time...")
