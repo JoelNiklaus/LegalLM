@@ -105,7 +105,7 @@ class SupervisedDataset(Dataset):
                        f"{example['instruction']}"
                        for example in list_data_dict
                        if 'instruction' in example and example.get("instruction", "") != ""]
-        targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
+        targets = [f"{example['output']}\n\n{tokenizer.eos_token}" for example in list_data_dict]
 
         logging.warning("Tokenizing inputs... This may take some time...")
         data_dict = preprocess(sources, targets, tokenizer, supervised=True)
