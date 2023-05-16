@@ -7,23 +7,40 @@ from datasets import load_dataset
 import pandas as pd
 
 
+def should_be_sampled(example, max_num_whitespace_tokens):
+    example = {k: ("" if v is None else v) for k, v in example.items()}
+    text = example["instruction"] + " " + example["prompt"] + " " + example["answer"]
+    return text and len(text.split()) < max_num_whitespace_tokens
+
+
+def get_example_dict(example):
+    return {
+        "instruction": example["instruction"],
+        "input": example["prompt"],
+        "output": example["answer"]
+    }
+
+
+def calc_max_num_whitespace_tokens(max_seq_len, use_template=False):
+    token_deduction = int(max_seq_len / 3)  # each whitespace word expands to approx. 1.5 tokens
+    if use_template:
+        template_deduction = 50  # 50 tokens for the instruction template in the LegalLM code
+    else:
+        template_deduction = 0
+    max_num_whitespace_tokens = max_seq_len - token_deduction - template_deduction
+    # with template_deduction: 512 ==> 292, 1024 ==> 633, 2048 ==> 1316
+    return max_num_whitespace_tokens
+
+
 def generate_instruction_data(dataset_name,
                               configs,
                               max_seq_len=512,
                               num_samples=500,
                               use_fast_way=True,
                               do_shuffle=True):
-    def should_be_sampled(example, max_num_whitespace_tokens):
-        example = {k: ("" if v is None else v) for k, v in example.items()}
-        text = example["instruction"] + " " + example["prompt"] + " " + example["answer"]
-        return text and len(text.split()) < max_num_whitespace_tokens
-
-    def get_example_dict(example):
-        return {
-            "instruction": example["instruction"],
-            "input": example["prompt"],
-            "output": example["answer"]
-        }
+    """
+    We only use zero-shot examples for now because our examples are very long.
+    """
 
     instruction_data = []
     filename = f"law_instruction_data_len:{max_seq_len}_samples:{num_samples}.json"
@@ -36,10 +53,7 @@ def generate_instruction_data(dataset_name,
                                use_auth_token=True,
                                streaming=True)
 
-        token_deduction = int(max_seq_len / 3)  # each whitespace word expands to approx. 1.5 tokens
-        template_deduction = 50  # 50 tokens for the instruction template in the LegalLM code
-        max_num_whitespace_tokens = max_seq_len - token_deduction - template_deduction
-        # 512 ==> 292, 1024 ==> 633, 2048 ==> 1316
+        max_num_whitespace_tokens = calc_max_num_whitespace_tokens(max_seq_len)
         print(
             f"Filtering out examples with more than {max_seq_len} tokens "
             f"({max_num_whitespace_tokens} whitespace separated words) and sampling {num_samples} examples..."
@@ -79,7 +93,8 @@ def generate_instruction_data(dataset_name,
 
 
 def generate_lawinstruct(max_seq_len=512, num_samples=10000, debug=False):
-    dataset_name = "lawinstruct/lawinstruct"
+    instructions = "english"
+    dataset_name = f"lawinstruct/lawinstruct_{instructions}"
     configs = get_dataset_config_names(dataset_name)
     if debug:
         configs = configs[:1]
@@ -93,6 +108,7 @@ def generate_lawinstruct(max_seq_len=512, num_samples=10000, debug=False):
 
 
 if __name__ == '__main__':
+    # TODO check why some datasets only contain very few examples even when using 2048 tokens
     for max_seq_len in [512, 1024, 2048]:
         for num_samples in [100, 1000, 10000]:
             generate_lawinstruct(max_seq_len=max_seq_len, num_samples=num_samples)
