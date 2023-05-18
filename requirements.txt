@@ -13,3 +13,4 @@ loralib
 accelerate
 bitsandbytes
 safetensors
+einops
