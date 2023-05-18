@@ -37,14 +37,16 @@ def generate_instruction_data(dataset_name,
                               max_seq_len=512,
                               num_samples=500,
                               use_fast_way=True,
-                              do_shuffle=True):
+                              do_shuffle=True,
+                              english_datasets_only=False):
     """
     We only use zero-shot examples for now because our examples are very long.
     """
 
     instruction_data = []
     filename = f"law_instruction_data_len:{max_seq_len}_samples:{num_samples}.json"
-    stats = {"config": [], "num_examples": []}
+    stats = {"config": [], "num_examples": [], "jurisdiction": [],
+             "instruction_language": [], "prompt_language": [], "answer_language": []}
     for config in configs:
         print(f"Loading {dataset_name}:{config}...")
         dataset = load_dataset(dataset_name,
@@ -58,6 +60,13 @@ def generate_instruction_data(dataset_name,
             f"Filtering out examples with more than {max_seq_len} tokens "
             f"({max_num_whitespace_tokens} whitespace separated words) and sampling {num_samples} examples..."
         )
+        if english_datasets_only:
+            example = next(iter(dataset))
+            if example["prompt_language"] != "en":
+                print(f"The first example's language of the dataset {config} was {example['prompt_language']}. "
+                      f"Skipping...")
+                continue
+
         if use_fast_way:
             num_samples_taken = 0
             for example in dataset:
@@ -77,6 +86,12 @@ def generate_instruction_data(dataset_name,
 
         stats["config"].append(config)
         stats["num_examples"].append(num_samples_taken)
+
+
+        stats["jurisdiction"].append(example["jurisdiction"])
+        stats["instruction_language"].append(example["instruction_language"])
+        stats["prompt_language"].append(example["prompt_language"])
+        stats["answer_language"].append(example["answer_language"])
 
     if do_shuffle:
         print(f"Shuffling {len(instruction_data)} examples...")
@@ -110,5 +125,5 @@ def generate_lawinstruct(max_seq_len=512, num_samples=10000, debug=False):
 if __name__ == '__main__':
     # TODO check why some datasets only contain very few examples even when using 2048 tokens
     for max_seq_len in [512, 1024, 2048]:
-        for num_samples in [100, 1000, 10000]:
+        for num_samples in [10, 100, 1000, 10000]:
             generate_lawinstruct(max_seq_len=max_seq_len, num_samples=num_samples)
