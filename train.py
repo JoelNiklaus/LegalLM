@@ -11,18 +11,18 @@
 #    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
-
-
+import os
 from dataclasses import dataclass, field
 from typing import Optional, Dict
 
 import transformers
-from transformers import Trainer
+from transformers import Trainer, TrainerCallback, TrainerState, TrainerControl
 
 from peft import LoraConfig, get_peft_model
 import torch
 import torch.nn as nn
 import bitsandbytes as bnb
+from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 
 from prepare_data import make_supervised_data_module
 
@@ -52,6 +52,29 @@ class TrainingArguments(transformers.TrainingArguments):
         default=512,
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
     )
+
+
+class SavePeftModelCallback(TrainerCallback):
+    """https://github.com/huggingface/peft/issues/96#issuecomment-1460080427"""
+
+    def on_save(
+            self,
+            args: TrainingArguments,
+            state: TrainerState,
+            control: TrainerControl,
+            **kwargs,
+    ):
+        checkpoint_folder = os.path.join(
+            args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}"
+        )
+
+        peft_model_path = os.path.join(checkpoint_folder, "adapter_model")
+        kwargs["model"].save_pretrained(peft_model_path)
+
+        pytorch_model_path = os.path.join(checkpoint_folder, "pytorch_model.bin")
+        if os.path.exists(pytorch_model_path):
+            os.remove(pytorch_model_path)
+        return control
 
 
 def safe_save_model_for_hf_trainer(trainer: transformers.Trainer, output_dir: str):
@@ -168,7 +191,10 @@ def train():
 
     data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
 
-    trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    trainer = Trainer(model=model, tokenizer=tokenizer,
+                      callbacks=[SavePeftModelCallback],
+                      args=training_args,
+                      **data_module)
     trainer.train()
 
     hf_name = f"lawinstruct/LegalLM-{model_args.model_name_or_path.split('/')[1]}"
