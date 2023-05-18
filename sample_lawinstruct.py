@@ -45,7 +45,7 @@ def generate_instruction_data(dataset_name,
 
     instruction_data = []
     filename = f"law_instruction_data_len:{max_seq_len}_samples:{num_samples}.json"
-    stats = {"config": [], "num_examples": [], "jurisdiction": [],
+    stats = {"config": [], "num_examples": [], "jurisdiction": [], "task_type": [],
              "instruction_language": [], "prompt_language": [], "answer_language": []}
     for config in configs:
         print(f"Loading {dataset_name}:{config}...")
@@ -87,8 +87,8 @@ def generate_instruction_data(dataset_name,
         stats["config"].append(config)
         stats["num_examples"].append(num_samples_taken)
 
-
         stats["jurisdiction"].append(example["jurisdiction"])
+        stats["task_type"].append(example["task_type"])
         stats["instruction_language"].append(example["instruction_language"])
         stats["prompt_language"].append(example["prompt_language"])
         stats["answer_language"].append(example["answer_language"])
@@ -113,7 +113,7 @@ def generate_lawinstruct(max_seq_len=512, num_samples=10000, debug=False):
     configs = get_dataset_config_names(dataset_name)
     if debug:
         configs = configs[:1]
-    print(configs)
+    print(f"Available configs: {configs}")
 
     non_legal_configs = ['NaturalInstructionsOther', 'XP3MT']
     faulty_configs = []

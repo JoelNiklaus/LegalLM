@@ -116,7 +116,11 @@ def train():
     model = transformers.AutoModelForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
-        load_in_8bit=True if training_args.train_with_peft else False,
+        trust_remote_code=True,
+        # loading in 8 bit might lead to problems:
+        # but so far we don't know if 8 bit is the issue or training a fp16 trained model in bf16 or both
+        # since I did not see huge gains in memory usage when loading in 8 bit, disable it for now
+        # load_in_8bit=True if training_args.train_with_peft else False,
         device_map='auto',
     )
     print(model.config)
