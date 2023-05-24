@@ -100,9 +100,9 @@ class SupervisedDataset(Dataset):
                 for example in list_data_dict if 'instruction' in example
             ]
         else:
-            sources = [f"{example['instruction']}\n{example['input']}"
+            sources = [f"{example['instruction']}\n\n{example['input']}\n\n"
                        if example.get("input", "") != "" else
-                       f"{example['instruction']}"
+                       f"{example['instruction']}\n\n"
                        for example in list_data_dict
                        if 'instruction' in example and example.get("instruction", "") != ""]
         targets = [f"{example['output']}\n\n{tokenizer.eos_token}" for example in list_data_dict]
