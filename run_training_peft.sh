@@ -19,15 +19,15 @@ LEARNING_RATE=2e-4
 
 MAX_SEQ_LEN=512
 
-export CUDA_VISIBLE_DEVICES=0 # restrict usable GPUs here
+export CUDA_VISIBLE_DEVICES=1 # restrict usable GPUs here
 #NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l) # does not work with CUDA_VISIBLE_DEVICES
 NUM_GPUS=$(echo $CUDA_VISIBLE_DEVICES | tr ',' '\n' | wc -l | tr -d ' ')
 echo "Using $NUM_GPUS GPUs"
 
 if [ "$NUM_GPUS" -eq 1 ]; then
-    # Set BATCH_SIZE based on the given MAX_SEQ_LEN (tested on 1 80GB A100 GPUs for a 12B model) or was it a 7B model???
+    # Set BATCH_SIZE based on the given MAX_SEQ_LEN (tested on 1 80GB A100 GPUs for a 7B model)
     if [ "$MAX_SEQ_LEN" -eq 512 ]; then
-      BATCH_SIZE=6
+      BATCH_SIZE=4 # maybe 6 for pythia-6.7B
     elif [ "$MAX_SEQ_LEN" -eq 1024 ]; then
       BATCH_SIZE=2
     elif [ "$MAX_SEQ_LEN" -eq 2048 ]; then
@@ -77,7 +77,7 @@ echo "Using batch size $BATCH_SIZE"
 TOTAL_BATCH_SIZE=256
 ACC_STEPS=$((TOTAL_BATCH_SIZE / (NUM_GPUS * BATCH_SIZE)))
 
-SAMPLES_PER_DATASET=10000
+SAMPLES_PER_DATASET=1000
 
 DATA_PATH=./alpaca_data.json
 DATA_PATH=./alpaca_data_cleaned.json
@@ -95,8 +95,9 @@ DATA_PATH=max-seq-len:${MAX_SEQ_LEN}_samples:${SAMPLES_PER_DATASET} # generate t
 # base models
 # 7B scale
 #MODEL_PATH=llama-7b
+MODEL_PATH=huggyllama/llama-7b
 #MODEL_PATH=cerebras/Cerebras-GPT-6.7B # this is apparently not great
-MODEL_PATH=EleutherAI/pythia-6.9b
+#MODEL_PATH=EleutherAI/pythia-6.9b
 #MODEL_PATH=stabilityai/stablelm-base-alpha-7b # this is apparently not great
 #MODEL_PATH=facebook/opt-6.7b # this is apparently not great
 
