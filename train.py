@@ -21,16 +21,12 @@ from transformers import Trainer, TrainerCallback, TrainerState, TrainerControl
 from peft import LoraConfig, get_peft_model
 import torch
 import torch.nn as nn
-import bitsandbytes as bnb
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
-
 from prepare_data import make_supervised_data_module
 
-DEFAULT_PAD_TOKEN = "[PAD]"
-DEFAULT_EOS_TOKEN = "</s>"
-DEFAULT_BOS_TOKEN = "</s>"
-DEFAULT_UNK_TOKEN = "</s>"
+import bitsandbytes as bnb
 
+DEFAULT_PAD_TOKEN = "[PAD]"
 
 @dataclass
 class ModelArguments:
@@ -119,20 +115,23 @@ def train():
         trust_remote_code=True,
         # loading in 8 bit might lead to problems:
         # but so far we don't know if 8 bit is the issue or training a fp16 trained model in bf16 or both
-        # since I did not see huge gains in memory usage when loading in 8 bit, disable it for now
+        # since I did not see huge gains in memory usage when loading in 8 bit,
+        # fp16 pythia 6.7b with 8 bit: 110s/it; without 8 bit: 30s/it, memory usage the same ==> disable it for now
+        # however, in the lora colab it is enabled: https://colab.research.google.com/drive/1jCkpikz0J2o20FBQmYmAGdiKmJGOMo-o?usp=sharing#scrollTo=AQ_HCYruWIHU
         # load_in_8bit=True if training_args.train_with_peft else False,
         device_map='auto',
     )
     print(model.config)
     print(model)
 
+    if 'mosaicml/mpt' in model_args.model_name_or_path:
+        model.config.attn_config['attn_impl'] = 'triton'
+
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         model_args.model_name_or_path,
         cache_dir=training_args.cache_dir,
         model_max_length=training_args.model_max_length,
         padding_side="right",
-        use_fast=False if "llama" in model_args.model_name_or_path.lower() else True,
-        # use_fast=True if "stablelm" in model_args.model_name_or_path.lower() else False,
     )
     if tokenizer.pad_token is None:
         print(f"Adding {DEFAULT_PAD_TOKEN} to the tokenizer.")
@@ -140,14 +139,6 @@ def train():
             special_tokens_dict=dict(pad_token=DEFAULT_PAD_TOKEN),
             tokenizer=tokenizer,
             model=model,
-        )
-    if "llama" in model_args.model_name_or_path:
-        tokenizer.add_special_tokens(
-            {
-                "eos_token": DEFAULT_EOS_TOKEN,
-                "bos_token": DEFAULT_BOS_TOKEN,
-                "unk_token": DEFAULT_UNK_TOKEN,
-            }
         )
 
     if training_args.train_with_peft:
@@ -174,8 +165,8 @@ def train():
             model.lm_head = CastOutputToFloat(model.lm_head)
             target_modules = ["c_attn", "c_proj"]
         elif isinstance(model.config, transformers.LlamaConfig):
-            # TODO figure this out
-            pass
+            model.lm_head = CastOutputToFloat(model.lm_head)
+            target_modules = ["q_proj", "v_proj"]
         else:
             raise ValueError(f"Unknown model: {model_args.model_name_or_path}")
 
