@@ -38,7 +38,7 @@ def generate_instruction_data(dataset_name,
                               num_samples=500,
                               use_fast_way=True,
                               do_shuffle=True,
-                              english_datasets_only=False):
+                              only_english_tasks=False):
     """
     We only use zero-shot examples for now because our examples are very long.
     """
@@ -60,7 +60,7 @@ def generate_instruction_data(dataset_name,
             f"Filtering out examples with more than {max_seq_len} tokens "
             f"({max_num_whitespace_tokens} whitespace separated words) and sampling {num_samples} examples..."
         )
-        if english_datasets_only:
+        if only_english_tasks:
             example = next(iter(dataset))
             if example["prompt_language"] != "en":
                 print(f"The first example's language of the dataset {config} was {example['prompt_language']}. "
@@ -107,9 +107,10 @@ def generate_instruction_data(dataset_name,
     return instruction_data
 
 
-def generate_lawinstruct(max_seq_len=512, num_samples=10000, debug=False):
-    instructions = "english"
-    dataset_name = f"lawinstruct/lawinstruct_{instructions}"
+def generate_lawinstruct(max_seq_len=512, num_samples=10000, debug=False,
+                         instruction_language="english", only_english_tasks=True,
+                         tasks="all"):
+    dataset_name = f"lawinstruct/lawinstruct_{instruction_language}"
     configs = get_dataset_config_names(dataset_name)
     if debug:
         configs = configs[:1]
@@ -119,7 +120,41 @@ def generate_lawinstruct(max_seq_len=512, num_samples=10000, debug=False):
     faulty_configs = []
     configs = [config for config in configs
                if config not in non_legal_configs and config not in faulty_configs and config != 'all']
-    return generate_instruction_data(dataset_name, configs, max_seq_len=max_seq_len, num_samples=num_samples)
+    if tasks == 'without-mc':
+        mc_configs = [
+            'BrCAD5-brcad5_mc',
+            'CAIL2022-cail_2022_mc',
+            'ProfessionalLaw-professional_law_examples',
+            'ProfessionalLaw-professional_law_zero_shot',
+            'ReClor-reclor',
+            'Sara-sara_entailment',
+            'Sara-sara_tax_liability',
+            'SwissJudgmentPrediction-swiss_judgment_multiple_choice',
+            'TsccAlqac-tscc_alqac_question_answering',
+            'TurkishConstitutionalCourt-MainSubset',
+            'TurkishConstitutionalCourt-turkish_constitutional_multiple_choice',
+            'ValidWills-MainSubset',
+        ]
+        configs = [config for config in configs if config not in mc_configs]  # filter out multiple choice datasets
+    elif tasks == 'without-nli':
+        nli_configs = [
+            'LawngNli-lawng_nli_entailment',
+            'ValidWills-MainSubset',
+            'Sara-sara_entailment',
+            'ContractNLI-contract_nli',
+            'COLIEE-task3_generate_entailed_question',
+            'COLIEE-task3_passage_entailment'
+        ]
+        configs = [config for config in configs if config not in nli_configs]  # exclude the entailment sets
+    elif tasks == 'only-lexglue':
+        configs = [config for config in configs if "LexGLUE" in config]  # only take lex glue tasks
+    elif tasks == 'only-casehold':
+        configs = ['LexGLUE-case_hold']  # only take casehold
+    else:
+        pass
+    print(f"Using configs: {configs}")
+    return generate_instruction_data(dataset_name, configs, max_seq_len=max_seq_len, num_samples=num_samples,
+                                     only_english_tasks=only_english_tasks)
 
 
 if __name__ == '__main__':
