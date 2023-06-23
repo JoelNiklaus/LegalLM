@@ -28,9 +28,11 @@ import bitsandbytes as bnb
 
 DEFAULT_PAD_TOKEN = "[PAD]"
 
+
 @dataclass
 class ModelArguments:
     model_name_or_path: Optional[str] = field(default="facebook/opt-125m")
+    lora_r: int = field(default=16, metadata={"help": "The Lora R parameter"})
 
 
 @dataclass
@@ -43,7 +45,7 @@ class TrainingArguments(transformers.TrainingArguments):
     train_with_peft: bool = field(default=False)
     gradient_checkpointing: bool = field(default=False)
     cache_dir: Optional[str] = field(default=None)
-    optim: str = field(default="adamw_torch")
+    optim: str = field(default="adamw_torch")  # paged_adamw_8bit
     model_max_length: int = field(
         default=512,
         metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
@@ -53,13 +55,7 @@ class TrainingArguments(transformers.TrainingArguments):
 class SavePeftModelCallback(TrainerCallback):
     """https://github.com/huggingface/peft/issues/96#issuecomment-1460080427"""
 
-    def on_save(
-            self,
-            args: TrainingArguments,
-            state: TrainerState,
-            control: TrainerControl,
-            **kwargs,
-    ):
+    def on_save(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
         checkpoint_folder = os.path.join(
             args.output_dir, f"{PREFIX_CHECKPOINT_DIR}-{state.global_step}"
         )
@@ -119,7 +115,7 @@ def train():
         # fp16 pythia 6.7b with 8 bit: 110s/it; without 8 bit: 30s/it, memory usage the same ==> disable it for now
         # however, in the lora colab it is enabled: https://colab.research.google.com/drive/1jCkpikz0J2o20FBQmYmAGdiKmJGOMo-o?usp=sharing#scrollTo=AQ_HCYruWIHU
         # load_in_8bit=True if training_args.train_with_peft else False,
-        device_map='auto',
+        device_map='auto' if training_args.train_with_peft else None,
     )
     print(model.config)
     print(model)
@@ -141,6 +137,9 @@ def train():
             model=model,
         )
 
+    if training_args.gradient_checkpointing:
+        model.gradient_checkpointing_enable()  # reduce number of stored activations ==> greatly reduces memory usage
+
     if training_args.train_with_peft:
         for param in model.parameters():
             param.requires_grad = False  # freeze the model - train adapters later
@@ -148,8 +147,6 @@ def train():
                 # cast the small parameters (e.g. layernorm) to fp32 for stability
                 param.data = param.data.to(torch.float32)
 
-        if training_args.gradient_checkpointing:
-            model.gradient_checkpointing_enable()  # reduce number of stored activations ==> greatly reduces memory usage
         model.enable_input_require_grads()
 
         class CastOutputToFloat(nn.Sequential):
@@ -167,11 +164,15 @@ def train():
         elif isinstance(model.config, transformers.LlamaConfig):
             model.lm_head = CastOutputToFloat(model.lm_head)
             target_modules = ["q_proj", "v_proj"]
+        # elif isinstance(model.config, transformers.RWConfig):
+        elif "falcon" in model_args.model_name_or_path:
+            model.lm_head = CastOutputToFloat(model.lm_head)
+            target_modules = ["query_key_value", "dense", "dense_h_to_4h", "dense_4h_to_h"]
         else:
             raise ValueError(f"Unknown model: {model_args.model_name_or_path}")
 
         config = LoraConfig(
-            r=16,
+            r=model_args.lora_r,
             lora_alpha=32,
             target_modules=target_modules,
             lora_dropout=0.05,
@@ -184,10 +185,14 @@ def train():
 
         model.config.use_cache = False  # silence the warnings. Please re-enable for inference!
 
-    data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
+    # TODO save this to a cache
+    data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args,
+                                              template=False, supervised=True)
+
+    callbacks = [SavePeftModelCallback] if training_args.train_with_peft else []
 
     trainer = Trainer(model=model, tokenizer=tokenizer,
-                      callbacks=[SavePeftModelCallback],
+                      callbacks=callbacks,
                       args=training_args,
                       **data_module)
     trainer.train()
@@ -200,7 +205,7 @@ def train():
         trainer.save_state()
         safe_save_model_for_hf_trainer(trainer=trainer, output_dir=training_args.output_dir)
 
-    model.push_to_hub(hf_name, use_auth_token=True, private=True)
+    # model.push_to_hub(hf_name, use_auth_token=True, private=True) # disable for now because it is unreliable
 
 
 if __name__ == "__main__":

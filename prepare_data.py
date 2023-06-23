@@ -80,19 +80,20 @@ def preprocess(
 class SupervisedDataset(Dataset):
     """Dataset for supervised fine-tuning."""
 
-    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer, use_template=False):
+    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer, template, supervised):
         super(SupervisedDataset, self).__init__()
-        if "max-seq-len:" in data_path and "samples:" in data_path:
-            max_seq_len, num_samples = [int(x.split(":")[1]) for x in data_path.split("_")]
-            logging.warning(f"Generating data with max_seq_len={max_seq_len} and num_samples={num_samples} ...")
-            list_data_dict = generate_lawinstruct(max_seq_len=max_seq_len, num_samples=num_samples, debug=False)
+        if "max-seq-len:" in data_path and "samples:" in data_path and "tasks:" in data_path:
+            max_seq_len, num_samples, tasks = [x.split(":")[1] for x in data_path.split("_")]
+            logging.warning(f"Generating data with max_seq_len={max_seq_len} and num_samples={num_samples} and tasks={tasks} ...")
+            list_data_dict = generate_lawinstruct(max_seq_len=int(max_seq_len), num_samples=int(num_samples), debug=False,
+                                                  tasks=tasks)
         else:  # it is a real data path
             logging.warning(f"Loading data from {data_path} ...")
             list_data_dict = utils.jload(data_path)
 
         logging.warning("Formatting inputs...")
 
-        if use_template:
+        if template:
             sources = [
                 PROMPT_DICT["prompt_input"].format_map(example)
                 if example.get("input", "") != "" else
@@ -108,7 +109,7 @@ class SupervisedDataset(Dataset):
         targets = [f"{example['output']}\n\n{tokenizer.eos_token}" for example in list_data_dict]
 
         logging.warning("Tokenizing inputs... This may take some time...")
-        data_dict = preprocess(sources, targets, tokenizer, supervised=True)
+        data_dict = preprocess(sources, targets, tokenizer, supervised=supervised)
 
         self.input_ids = data_dict["input_ids"]
         self.labels = data_dict["labels"]
@@ -139,8 +140,9 @@ class DataCollatorForSupervisedDataset(object):
         )
 
 
-def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
+def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args, template, supervised) -> Dict:
     """Make dataset and collator for supervised fine-tuning."""
-    train_dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path)
+    train_dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path,
+                                      template=template, supervised=supervised)
     data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
     return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
